@@ -14,7 +14,8 @@ int main(int argc, char **argv)
 
     sscanf(argv[1], "%d", &pid);
 
-    /* The various types of namespaces (descriptions from from nsenter(1) man page) */
+    /* The various types of namespaces (descriptions from from
+       nsenter(1) man page) */
     const char *nss[7] = {
         "mnt",    /* the mount namespace */
         "uts",    /* the UTS namespace */
@@ -25,7 +26,10 @@ int main(int argc, char **argv)
         "cgroup", /* the cgroup namespace */
     };
 
-    /* XXX Using setns() to change the caller's cgroup namespace does not change the caller's cgroup memberships. */
+    /* Take up the namespaces of the dumping process.
+
+       XXX Using setns() to change the caller's cgroup namespace does
+       not change the caller's cgroup memberships. */
     for (int i = 0; i < 7; ++i)
     {
         char filename[0xff];
@@ -35,9 +39,21 @@ int main(int argc, char **argv)
         fd = open(filename, O_RDONLY);
         if (setns(fd, 0) != 0)
         {
-            fprintf(stderr, "%s namespace failed\n", nss[i]);
+            fprintf(stderr, "Change of %s namespace failed\n", nss[i]);
         }
         close(fd);
     }
+
+    /* Change root directory to that of the dumping process. */
+    {
+        char root[0xff];
+
+        sprintf(root, "/proc/%d/root", pid);
+        if (chroot(root) != 0)
+        {
+            fprintf(stderr, "chroot to %s failed\n", root);
+        }
+    }
+
     return 0;
 }
