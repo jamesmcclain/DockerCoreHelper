@@ -2,9 +2,11 @@
 #include <sched.h>
 
 #include <stdio.h>
+#include <stdint.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -67,6 +69,29 @@ int main(int argc, char **argv)
     if (setreuid(uid, uid) != 0)
     {
         fprintf(stderr, "Unable to switch to user %d\n", uid);
+    }
+
+    /* Write core file */
+    {
+        ssize_t count = -1;
+        uint8_t buffer[0x1000];
+        int fd;
+        char path[0xff];
+
+        sprintf(path, "/tmp/core.%d.%d.%d", pid, uid, gid);
+        if ((fd = open(path, O_WRONLY | O_CREAT | O_SYNC, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP)) == -1)
+        {
+            fprintf(stderr, "Unable to open %s for writing\n", path);
+        }
+
+        while ((count = read(0, buffer, 0x1000)) > 0)
+        {
+            if (write(fd, buffer, count) == -1)
+            {
+                fprintf(stderr, "Unable to write %ld bytes to %s due to %d\n", count, path, errno);
+            }
+        }
+        close(fd);
     }
 
     return 0;
