@@ -15,6 +15,7 @@ int main(int argc, char **argv)
     pid_t pid;
     uid_t uid;
     gid_t gid;
+    int root = -1;
 
     sscanf(argv[1], "%d", &pid);
     sscanf(argv[2], "%d", &uid);
@@ -23,14 +24,24 @@ int main(int argc, char **argv)
     /* The various types of namespaces (descriptions from from
        nsenter(1) man page) */
     const char *nss[7] = {
-        "mnt",    /* the mount namespace */
-        "uts",    /* the UTS namespace */
-        "ipc",    /* the IPC namespace */
-        "net",    /* the network namespace */
-        "pid",    /* the PID namespace */
         "user",   /* the user namespace */
         "cgroup", /* the cgroup namespace */
+        "ipc",    /* the IPC namespace */
+        "uts",    /* the UTS namespace */
+        "net",    /* the network namespace */
+        "pid",    /* the PID namespace */
+        "mnt",    /* the mount namespace */
     };
+
+    {
+        char rootpath[0xff];
+
+        sprintf(rootpath, "/proc/%d/root", pid);
+        if ((root = open(rootpath, O_RDONLY)) == -1)
+        {
+            fprintf(stderr, "Unable to open %s\n", rootpath);
+        }
+    }
 
     /* Take up the namespaces of the dumping process.
 
@@ -41,23 +52,24 @@ int main(int argc, char **argv)
         char filename[0xff];
         int fd;
 
-        sprintf(filename, "/proc/%d/ns/%s", pid, nss[i]);
+        sprintf(filename, "/proc/%d/ns/%s", pid, nss[i % 7]);
         fd = open(filename, O_RDONLY);
         if (setns(fd, 0) != 0)
         {
-            fprintf(stderr, "Change of %s namespace failed\n", nss[i]);
+            fprintf(stderr, "(Warning) change of %s namespace failed\n", nss[i % 7]);
         }
         close(fd);
     }
 
     /* Change root directory to that of the dumping process. */
     {
-        char root[0xff];
-
-        sprintf(root, "/proc/%d/root", pid);
-        if (chroot(root) != 0)
+        if (fchdir(root) != 0)
         {
-            fprintf(stderr, "chroot to %s failed\n", root);
+            fprintf(stderr, "fchdir failed\n");
+        }
+        if (chroot(".") != 0)
+        {
+            fprintf(stderr, "chroot failed\n");
         }
     }
 
