@@ -11,8 +11,12 @@
 int main(int argc, char **argv)
 {
     pid_t pid;
+    uid_t uid;
+    gid_t gid;
 
     sscanf(argv[1], "%d", &pid);
+    sscanf(argv[2], "%d", &uid);
+    sscanf(argv[3], "%d", &gid);
 
     /* The various types of namespaces (descriptions from from
        nsenter(1) man page) */
@@ -53,6 +57,16 @@ int main(int argc, char **argv)
         {
             fprintf(stderr, "chroot to %s failed\n", root);
         }
+    }
+
+    /* Change real and effective user, group */
+    if (setregid(gid, gid) != 0)
+    {
+        fprintf(stderr, "Unable to switch to group %d\n", gid);
+    }
+    if (setreuid(uid, uid) != 0)
+    {
+        fprintf(stderr, "Unable to switch to user %d\n", uid);
     }
 
     return 0;
