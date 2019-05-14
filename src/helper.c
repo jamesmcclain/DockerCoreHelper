@@ -102,27 +102,34 @@ int main(int argc, char **argv)
         fprintf(stderr, "Unable to switch to user %d\n", uid);
     }
 
-    /* Write core file */
+    /* Attempt to use the specified handler, otherwise write core file */
     {
-        ssize_t count = -1;
-        uint8_t buffer[0x1000];
-        int fd;
-        char path[0xff];
-
-        sprintf(path, "/tmp/core.%d.%d.%d", pid, uid, gid);
-        if ((fd = open(path, O_WRONLY | O_CREAT | O_SYNC, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP)) == -1)
+        if (execv(argv[4], argv + 4) == -1)
         {
-            fprintf(stderr, "Unable to open %s for writing\n", path);
+            fprintf(stderr, "Failed to execv %s with %d ... will write core file instead\n", argv[4], errno);
         }
-
-        while ((count = read(0, buffer, 0x1000)) > 0)
+        else
         {
-            if (write(fd, buffer, count) == -1)
+            ssize_t count = -1;
+            uint8_t buffer[0x1000];
+            int fd;
+            char path[0xff];
+
+            sprintf(path, "/tmp/core.%d.%d.%d", pid, uid, gid);
+            if ((fd = open(path, O_WRONLY | O_CREAT | O_SYNC, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP)) == -1)
             {
-                fprintf(stderr, "Unable to write %ld bytes to %s due to %d\n", count, path, errno);
+                fprintf(stderr, "Unable to open %s for writing\n", path);
             }
+
+            while ((count = read(0, buffer, 0x1000)) > 0)
+            {
+                if (write(fd, buffer, count) == -1)
+                {
+                    fprintf(stderr, "Unable to write %ld bytes to %s due to %d\n", count, path, errno);
+                }
+            }
+            close(fd);
         }
-        close(fd);
     }
 
     return 0;
