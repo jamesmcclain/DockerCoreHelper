@@ -6,6 +6,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <grp.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -15,7 +16,7 @@ int main(int argc, char **argv)
     pid_t pid;
     uid_t uid;
     gid_t gid;
-    int root = -1;
+    int fds[7];
 
     sscanf(argv[1], "%d", &pid);
     sscanf(argv[2], "%d", &uid);
@@ -23,47 +24,39 @@ int main(int argc, char **argv)
 
     /* The various types of namespaces (descriptions from from
        nsenter(1) man page) */
-    const char *nss[7] = {
-        "user",   /* the user namespace */
+    const char *nss[] = {
         "cgroup", /* the cgroup namespace */
         "ipc",    /* the IPC namespace */
         "uts",    /* the UTS namespace */
         "net",    /* the network namespace */
         "pid",    /* the PID namespace */
         "mnt",    /* the mount namespace */
+        "user",   /* the user namespace */
     };
 
-    {
-        char rootpath[0xff];
-
-        sprintf(rootpath, "/proc/%d/root", pid);
-        if ((root = open(rootpath, O_RDONLY)) == -1)
-        {
-            fprintf(stderr, "Unable to open %s\n", rootpath);
-        }
-    }
-
-    /* Take up the namespaces of the dumping process.
-
-       XXX Using setns() to change the caller's cgroup namespace does
-       not change the caller's cgroup memberships. */
+    /* Open namespace file descriptors */
     for (int i = 0; i < 7; ++i)
     {
         char filename[0xff];
-        int fd;
 
-        sprintf(filename, "/proc/%d/ns/%s", pid, nss[i % 7]);
-        fd = open(filename, O_RDONLY);
-        if (setns(fd, 0) != 0)
+        sprintf(filename, "/proc/%d/ns/%s", pid, nss[i]);
+        if ((fds[i] = open(filename, O_RDONLY)) == -1)
         {
-            fprintf(stderr, "(Warning) change of %s namespace failed\n", nss[i % 7]);
+            fprintf(stderr, "Unable to open %s\n", nss[i]);
         }
-        close(fd);
     }
 
     /* Change root directory to that of the dumping process. */
     {
-        if (fchdir(root) != 0)
+        char rootpath[0xff];
+        int fd;
+
+        sprintf(rootpath, "/proc/%d/root", pid);
+        if ((fd = open(rootpath, O_RDONLY)) == -1)
+        {
+            fprintf(stderr, "Unable to open %s\n", rootpath);
+        }
+        if (fchdir(fd) != 0)
         {
             fprintf(stderr, "fchdir failed\n");
         }
@@ -71,6 +64,32 @@ int main(int argc, char **argv)
         {
             fprintf(stderr, "chroot failed\n");
         }
+    }
+
+    /* Drop supplementary groups */
+    setgroups(0, NULL);
+
+    /* Ensure no shared filesystem attributes */
+    unshare(CLONE_FS);
+
+    /* Take up the namespaces of the dumping process.
+
+       XXX Using setns() to change the caller's cgroup namespace does
+       not change the caller's cgroup memberships. */
+    for (int i = 0; i < 7; ++i)
+    {
+        int retval = setns(fds[i], 0);
+
+        if (retval != 0 && i != 6)
+        {
+            fprintf(stderr, "Change of %s namespace failed with %d\n", nss[i], errno);
+        }
+        /* This will fail if the user namespaces are already the same */
+        else if (retval != 0 && i == 6)
+        {
+            fprintf(stderr, "(Warning) change of %s namespace failed with %d\n", nss[i], errno);
+        }
+        close(fds[i]);
     }
 
     /* Change real and effective user, group */
