@@ -2,6 +2,7 @@
 #include <sched.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 
 #include <sys/types.h>
@@ -17,10 +18,37 @@ int main(int argc, char **argv)
     uid_t uid;
     gid_t gid;
     int fds[7];
+    char *environ = 0;
+    char **environs = 0;
 
     sscanf(argv[1], "%d", &pid);
     sscanf(argv[2], "%d", &uid);
     sscanf(argv[3], "%d", &gid);
+
+    /* Grab the environment from the faulting process */
+    {
+        char filename[0xff];
+        int fd;
+
+        sprintf(filename, "/proc/%d/environ", pid);
+        environ = calloc(1, 0x1000);
+        environs = calloc(1, 0x1000);
+        if ((fd = open(filename, O_RDONLY)) == -1)
+        {
+            fprintf(stderr, "Unable to fetch environment from %s\n", filename);
+        }
+        read(fd, environ, 0x1000); // XXX assume that it can be done in one read
+        close(fd);
+
+        for (int i, j = 0; i < 0x1000 && j < 0x1000; ++i)
+        {
+            environs[i] = (environ + j);
+            while (environ[j] != 0)
+                ++j;
+            while (j < 0x1000 && environ[j] == 0)
+                ++j;
+        }
+    }
 
     /* The various types of namespaces (descriptions from from
        nsenter(1) man page) */
@@ -104,7 +132,7 @@ int main(int argc, char **argv)
 
     /* Attempt to use the specified handler, otherwise write core file */
     {
-        if (execv(argv[4], argv + 4) == -1)
+        if (execve(argv[4], argv + 4, environs) == -1)
         {
             fprintf(stderr, "Failed to execv %s with %d ... will write core file instead\n", argv[4], errno);
         }
