@@ -28,25 +28,43 @@ int main(int argc, char **argv)
     /* Grab the environment from the faulting process */
     {
         char filename[0xff];
+        uint8_t temp_buffer[0x1000];
+        ssize_t bytes, filesize = 0;
         int fd;
 
         sprintf(filename, "/proc/%d/environ", pid);
-        environ = calloc(1, 0x1000);
-        environs = calloc(1, 0x1000);
         if ((fd = open(filename, O_RDONLY)) == -1)
         {
             fprintf(stderr, "Unable to fetch environment from %s\n", filename);
         }
-        read(fd, environ, 0x1000); // XXX assume that it can be done in one read
+
+        /* stat(2) reports zero bytes, so do this.  There should be no
+           trouble with the size changing inbetween calculation and
+           use, because the process has stopped (it is dumping
+           core) */
+        while ((bytes = read(fd, temp_buffer, 0x1000)) > 0) {
+            filesize += bytes;
+        }
+        lseek(fd, 0, SEEK_SET);
+        environ = calloc(1, filesize);
+        environs = calloc(1, filesize);
+
+        /* Read environment data */
+        for (ssize_t i = 0; i < filesize; i += read(fd, environ+i, filesize-i));
         close(fd);
 
-        for (int i, j = 0; i < 0x1000 && j < 0x1000; ++i)
+        /* Parse the environment data */
+        for (int i = 0, j = 0; i < filesize && j < filesize; ++i)
         {
             environs[i] = (environ + j);
             while (environ[j] != 0)
+            {
                 ++j;
-            while (j < 0x1000 && environ[j] == 0)
+            }
+            while (j < filesize && environ[j] == 0)
+            {
                 ++j;
+            }
         }
     }
 
@@ -100,10 +118,7 @@ int main(int argc, char **argv)
     /* Ensure no shared filesystem attributes */
     unshare(CLONE_FS);
 
-    /* Take up the namespaces of the dumping process.
-
-       XXX Using setns() to change the caller's cgroup namespace does
-       not change the caller's cgroup memberships. */
+    /* Take up the namespaces of the dumping process. */
     for (int i = 0; i < 7; ++i)
     {
         int retval = setns(fds[i], 0);
