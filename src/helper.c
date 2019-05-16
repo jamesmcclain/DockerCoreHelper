@@ -2,6 +2,7 @@
 #include <sched.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 
 #include <sys/types.h>
@@ -17,10 +18,57 @@ int main(int argc, char **argv)
     uid_t uid;
     gid_t gid;
     int fds[7];
+    char *environ = 0;
+    char **environs = 0;
 
     sscanf(argv[1], "%d", &pid);
     sscanf(argv[2], "%d", &uid);
     sscanf(argv[3], "%d", &gid);
+
+    /* Grab the environment from the faulting process */
+    {
+        char filename[0xff];
+        uint8_t temp_buffer[0x1000];
+        ssize_t bytes, filesize = 0;
+        int fd;
+
+        sprintf(filename, "/proc/%d/environ", pid);
+        if ((fd = open(filename, O_RDONLY)) == -1)
+        {
+            fprintf(stderr, "Unable to fetch environment from %s\n", filename);
+        }
+
+        /* stat(2) reports zero bytes, so do this.  There should be no
+           trouble with the size changing inbetween calculation and
+           use, because the process has stopped (it is dumping
+           core) */
+        while ((bytes = read(fd, temp_buffer, 0x1000)) > 0)
+        {
+            filesize += bytes;
+        }
+        lseek(fd, 0, SEEK_SET);
+        environ = calloc(1, filesize);
+        environs = calloc(1, filesize);
+
+        /* Read environment data */
+        for (ssize_t i = 0; i < filesize; i += read(fd, environ + i, filesize - i))
+            ;
+        close(fd);
+
+        /* Parse the environment data */
+        for (int i = 0, j = 0; i < filesize && j < filesize; ++i)
+        {
+            environs[i] = (environ + j);
+            while (environ[j] != 0)
+            {
+                ++j;
+            }
+            while (j < filesize && environ[j] == 0)
+            {
+                ++j;
+            }
+        }
+    }
 
     /* The various types of namespaces (descriptions from from
        nsenter(1) man page) */
@@ -72,10 +120,7 @@ int main(int argc, char **argv)
     /* Ensure no shared filesystem attributes */
     unshare(CLONE_FS);
 
-    /* Take up the namespaces of the dumping process.
-
-       XXX Using setns() to change the caller's cgroup namespace does
-       not change the caller's cgroup memberships. */
+    /* Take up the namespaces of the dumping process. */
     for (int i = 0; i < 7; ++i)
     {
         int retval = setns(fds[i], 0);
@@ -104,12 +149,10 @@ int main(int argc, char **argv)
 
     /* Attempt to use the specified handler, otherwise write core file */
     {
-        if (execv(argv[4], argv + 4) == -1)
+        if (execve(argv[4], argv + 4, environs) == -1)
         {
             fprintf(stderr, "Failed to execv %s with %d ... will write core file instead\n", argv[4], errno);
-        }
-        else
-        {
+
             ssize_t count = -1;
             uint8_t buffer[0x1000];
             int fd;

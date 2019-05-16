@@ -1,3 +1,4 @@
 docker_core_helper
-a.out
 *.o
+.vscode
+a.out
