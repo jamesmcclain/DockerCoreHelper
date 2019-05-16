@@ -42,7 +42,8 @@ int main(int argc, char **argv)
            trouble with the size changing inbetween calculation and
            use, because the process has stopped (it is dumping
            core) */
-        while ((bytes = read(fd, temp_buffer, 0x1000)) > 0) {
+        while ((bytes = read(fd, temp_buffer, 0x1000)) > 0)
+        {
             filesize += bytes;
         }
         lseek(fd, 0, SEEK_SET);
@@ -50,7 +51,8 @@ int main(int argc, char **argv)
         environs = calloc(1, filesize);
 
         /* Read environment data */
-        for (ssize_t i = 0; i < filesize; i += read(fd, environ+i, filesize-i));
+        for (ssize_t i = 0; i < filesize; i += read(fd, environ + i, filesize - i))
+            ;
         close(fd);
 
         /* Parse the environment data */
@@ -150,9 +152,7 @@ int main(int argc, char **argv)
         if (execve(argv[4], argv + 4, environs) == -1)
         {
             fprintf(stderr, "Failed to execv %s with %d ... will write core file instead\n", argv[4], errno);
-        }
-        else
-        {
+
             ssize_t count = -1;
             uint8_t buffer[0x1000];
             int fd;
