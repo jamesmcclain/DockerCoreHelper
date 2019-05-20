@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#define VARIABLE "DOCKERCOREHELPER_FALLBACK_CORE"
+
 int main(int argc, char **argv)
 {
     pid_t pid;
@@ -148,31 +150,35 @@ int main(int argc, char **argv)
     }
 
     /* Attempt to use the specified handler, otherwise write core file */
+    if ((execve(argv[4], argv + 4, environs) == -1) && (getenv(VARIABLE) == NULL))
     {
-        if (execve(argv[4], argv + 4, environs) == -1)
+        fprintf(stderr, "Failed to execv %s with %d ... will write core file instead\n", argv[4], errno);
+
+        ssize_t count = -1;
+        uint8_t buffer[0x1000];
+        int fd;
+        char path[0xff];
+
+        sprintf(path, "/tmp/core.%d.%d.%d", pid, uid, gid);
+        if ((fd = open(path, O_WRONLY | O_CREAT | O_SYNC, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP)) == -1)
         {
-            fprintf(stderr, "Failed to execv %s with %d ... will write core file instead\n", argv[4], errno);
-
-            ssize_t count = -1;
-            uint8_t buffer[0x1000];
-            int fd;
-            char path[0xff];
-
-            sprintf(path, "/tmp/core.%d.%d.%d", pid, uid, gid);
-            if ((fd = open(path, O_WRONLY | O_CREAT | O_SYNC, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP)) == -1)
-            {
-                fprintf(stderr, "Unable to open %s for writing\n", path);
-            }
-
-            while ((count = read(0, buffer, 0x1000)) > 0)
-            {
-                if (write(fd, buffer, count) == -1)
-                {
-                    fprintf(stderr, "Unable to write %ld bytes to %s due to %d\n", count, path, errno);
-                }
-            }
-            close(fd);
+            fprintf(stderr, "Unable to open %s for writing\n", path);
         }
+
+        while ((count = read(0, buffer, 0x1000)) > 0)
+        {
+            if (write(fd, buffer, count) == -1)
+            {
+                fprintf(stderr, "Unable to write %ld bytes to %s due to %d\n", count, path, errno);
+            }
+        }
+        close(fd);
+    }
+    else
+    {
+        fprintf(stderr,
+                "Failed to execv %s with %d and %s not set ... will NOT write core file\n",
+                argv[4], errno, VARIABLE);
     }
 
     return 0;
