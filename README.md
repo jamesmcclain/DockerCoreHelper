@@ -22,3 +22,7 @@ Make sure that the desired helper script exists in the Docker container or image
 ## Enable ##
 
 Enable the helper on the host so that it can delegate to the helper in the container (e.g. `echo '|/opt/bin/docker_core_helper %P %u %g /opt/bin/uploader.sh s3://my-bucket-for-cores/ %P %u %g'`).
+
+If no helper program is found, the default behavior is for no action to be taken.
+If the environment variable `DOCKERCOREHELPER_FALLBACK_CORE` is defined, then a core file will be generated with a pattern equivalent to `/tmp/core.%P.%u.%g` (with `%P`, `%u`, and `%g` as defined in the `core(5)` manpage).
+That behavior pertains to core files generated inside Docker containers or outside if the helper cannot be found in the view of the filesystem seen by the faulting process.
