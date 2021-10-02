@@ -72,7 +72,7 @@ int main(int argc, char **argv)
         }
     }
 
-    /* The various types of namespaces (descriptions from from
+    /* The various types of namespaces (descriptions from the
        nsenter(1) man page) */
     const char *nss[] = {
         "cgroup", /* the cgroup namespace */
